@@ -35,7 +35,7 @@ from qtpy.QtWidgets import (
 from magicgui import magic_factory, magicgui
 from qtpy.QtCore import Qt
 
-#%% Global variables for tracking state
+#% Global variables for tracking state and functions to act on the app class
 class AppState:
     def __init__(self):
         self.loaded_folder = None
@@ -64,6 +64,20 @@ def get_float_pos(st):
     st = re.split(r'[ \[\]]', st)
     pos = [int(element) for element in st if element != '']
     return pos
+
+def get_float_pos_comma(st):
+    """Parse string representation of position to get coordinates.
+    
+    Args:
+        st (str): String containing position coordinates
+        
+    Returns:
+        list: List of integer coordinates
+    """
+    st = re.split(r'[ \[\,\]]', st)
+    pos = [int(element) for element in st if element != '']
+    return pos
+
 
 def run_nellie_processing(im_path, num_t=None, remove_edges=False, ch=0):
     
@@ -133,6 +147,7 @@ def get_network(pixel_class_path):
         
         # Load the skeleton image
         skeleton = imread(pixel_class_path)
+        skeleton = np.transpose(skeleton)
         show_info(f"Skeleton shape: {np.shape(skeleton)}")
         print(np.shape(skeleton))
         # Define 3D connectivity structure
@@ -274,6 +289,40 @@ def get_network(pixel_class_path):
         show_error(f"Error generating network: {str(e)}")
         return None, None
 
+def adjacency_to_extracted(extracted_csv_path,adjacency_path):
+    
+    adj_df = pd.read_csv(adjacency_path)
+    if os.path.exists(extracted_csv_path):
+        ext_df = pd.read_csv(extracted_csv_path)
+    else:
+        ext_df={}
+        
+    adjs_list = adj_df['adjacencies'].tolist()
+    deg_nd_i = []
+    deg_nd = []
+    
+    for el in adjs_list:
+        elf = get_float_pos_comma(el)
+        deg_nd_i.append(len(elf))
+        if (len(elf)>0):
+            deg_nd.append(len(elf))
+        
+    pos_x = adj_df['pos_x'].tolist()
+    pos_y = adj_df['pos_y'].tolist()
+    pos_z = adj_df['pos_z'].tolist()
+
+    pos_zxy = [[pos_z[i_n],pos_y[i_n],pos_x[i_n]] for i_n,i in enumerate(deg_nd) if i>0]    
+    
+    ext_df['Degree of Node'] = deg_nd
+    ext_df['Position(ZXY)'] = pos_zxy
+    
+    ext_df = pd.DataFrame.from_dict(ext_df)
+    
+    print(ext_df)
+    
+    ext_df.to_csv(extracted_csv_path,index=False)    
+        
+    
 def load_image_and_skeleton(nellie_output_path):
     """Load raw image and skeleton from Nellie output directory.
     
@@ -294,7 +343,8 @@ def load_image_and_skeleton(nellie_output_path):
             return None, None, [], [], []
             
         raw_file = raw_files[0]
-        basename = raw_file.removesuffix('-ch0-ome.ome.tif')
+        basename = raw_file.split(".")[0]
+        print('Basename is: '+basename)
         
         # Find skeleton image file
         skel_files = [f for f in tif_files if f.endswith('-ch0-im_pixel_class.ome.tif')]
@@ -309,8 +359,9 @@ def load_image_and_skeleton(nellie_output_path):
         skel_im_path = os.path.join(nellie_output_path, skel_file)
         
         # Check for node data file
-        node_path = os.path.join(nellie_output_path, f"{basename}_extracted.csv")
-        app_state.node_path = node_path
+        node_path_extracted = os.path.join(nellie_output_path, f"{basename}_extracted.csv")
+        adjacency_path = os.path.join(nellie_output_path, f"{basename}_adjacency_list.csv")
+        app_state.node_path = node_path_extracted
         
         # Load images
         raw_im = imread(raw_im_path)
@@ -320,9 +371,19 @@ def load_image_and_skeleton(nellie_output_path):
         # Default all points to red
         face_color_arr = ['red' for _ in range(len(skel_im))]
         
+        #Check if an adjaceny list exists and convert to extracted csv if so
+        if os.path.exists(adjacency_path) and not os.path.exists(node_path_extracted):
+            adjacency_to_extracted(node_path_extracted,adjacency_path)
+        
+        if os.path.exists(adjacency_path) and os.path.exists(node_path_extracted):
+            node_df = pd.read_csv(node_path_extracted)
+            app_state.node_dataframe = node_df            
+            if node_df.empty or pd.isna(node_df.index.max()):
+                adjacency_to_extracted(node_path_extracted,adjacency_path)
+        
         # Process extracted nodes if available
-        if os.path.exists(node_path):
-            node_df = pd.read_csv(node_path)
+        if os.path.exists(node_path_extracted):
+            node_df = pd.read_csv(node_path_extracted)
             app_state.node_dataframe = node_df
             
             if not node_df.empty and not pd.isna(node_df.index.max()):
@@ -331,8 +392,8 @@ def load_image_and_skeleton(nellie_output_path):
                 show_info(f"Extracted positions: {pos_extracted}")
                 
                 deg_extracted = node_df['Degree of Node'].values.astype(int)
-                positions = [get_float_pos(el) for el in pos_extracted]
-                
+                positions = [get_float_pos_comma(el) for el in pos_extracted]
+                print(positions)
                 # Generate colors based on node degree
                 colors = []
                 for i, degree in enumerate(deg_extracted):
@@ -346,12 +407,12 @@ def load_image_and_skeleton(nellie_output_path):
             else:
                 # Create empty dataframe if no data
                 app_state.node_dataframe = pd.DataFrame(columns=['Degree of Node', 'Position(ZXY)'])
-                app_state.node_dataframe.to_csv(node_path, index=False)
+                app_state.node_dataframe.to_csv(node_path_extracted, index=False)
                 return raw_im, skel_im, face_color_arr, [], []
         else:
             # Create new node file if none exists
             app_state.node_dataframe = pd.DataFrame(columns=['Degree of Node', 'Position(ZXY)'])
-            app_state.node_dataframe.to_csv(node_path, index=False)
+            app_state.node_dataframe.to_csv(node_path_extracted, index=False)
             return raw_im, skel_im, face_color_arr, [], []
             
     except Exception as e:
@@ -516,7 +577,6 @@ class FileLoaderWidget(QWidget):
     def on_view_clicked(self):
         """Handle view button click to display processing results."""
         if not app_state.nellie_output_path or not os.path.exists(app_state.nellie_output_path):
-            print(app_state.nellie_output_path)
             self.log_status("No results to view. Please run processing first.")
             return
             
@@ -585,7 +645,7 @@ class FileLoaderWidget(QWidget):
                 
         except Exception as e:
             self.log_status(f"Error generating network: {str(e)}")
-
+#%%
 # ============= MAIN APP =============
 
 def main():
