@@ -14,6 +14,7 @@ from scipy.ndimage import label as labell
 import networkx as nx
 import csv
 import warnings
+from natsort import natsorted
 
 try:
     from nellie.im_info.im_info import ImInfo
@@ -46,6 +47,10 @@ class AppState:
         self.points_layer = None
         self.node_path = None
         self.node_dataframe = None
+        self.slider_images = []
+        self.current_image_index = 0  # Current image index
+        self.image_sets_keys = []
+        self.image_sets = {}
 
 # Initialize global state
 app_state = AppState()
@@ -103,17 +108,17 @@ def run_nellie_processing(im_path, num_t=None, remove_edges=False, ch=0):
         
         # Set dimension sizes (adjust these values based on your imaging parameters)
         im_info.dim_sizes = {'Z': 0.30, 'Y': 0.17, 'X': 0.17, 'T': 0}
-        show_info(f"Dimension sizes set: {im_info.dim_sizes}")
+        #show_info(f"Dimension sizes set: {im_info.dim_sizes}")
         
         # Filtering step
         preprocessing = Filter(im_info, num_t, remove_edges=remove_edges)
         preprocessing.run()
-        show_info("Filtering complete")
+        #show_info("Filtering complete")
         
         # Segmentation step
         segmenting = Label(im_info, num_t)
         segmenting.run()
-        show_info("Segmentation complete")
+        #show_info("Segmentation complete")
         
         # Network analysis
         networking = Network(im_info, num_t)
@@ -149,7 +154,7 @@ def get_network(pixel_class_path):
         skeleton = imread(pixel_class_path)
         skeleton = np.transpose(skeleton)
         show_info(f"Skeleton shape: {np.shape(skeleton)}")
-        print(np.shape(skeleton))
+        
         # Define 3D connectivity structure
         struct = np.ones((3, 3, 3))
         
@@ -318,7 +323,7 @@ def adjacency_to_extracted(extracted_csv_path,adjacency_path):
     
     ext_df = pd.DataFrame.from_dict(ext_df)
     
-    print(ext_df)
+   
     
     ext_df.to_csv(extracted_csv_path,index=False)    
         
@@ -344,7 +349,6 @@ def load_image_and_skeleton(nellie_output_path):
             
         raw_file = raw_files[0]
         basename = raw_file.split(".")[0]
-        print('Basename is: '+basename)
         
         # Find skeleton image file
         skel_files = [f for f in tif_files if f.endswith('-ch0-im_pixel_class.ome.tif')]
@@ -393,7 +397,6 @@ def load_image_and_skeleton(nellie_output_path):
                 
                 deg_extracted = node_df['Degree of Node'].values.astype(int)
                 positions = [get_float_pos_comma(el) for el in pos_extracted]
-                print(positions)
                 # Generate colors based on node degree
                 colors = []
                 for i, degree in enumerate(deg_extracted):
@@ -444,6 +447,16 @@ class FileLoaderWidget(QWidget):
         file_layout = QVBoxLayout()
         file_group.setLayout(file_layout)
         
+        # File type selection
+        type_layout = QHBoxLayout()
+        type_label = QLabel("File Type:")
+        type_layout.addWidget(type_label)
+        
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["Single TIFF", "Time Series"])
+        type_layout.addWidget(self.type_combo)
+        file_layout.addLayout(type_layout)
+        
         # File path display and browse button
         path_layout = QHBoxLayout()
         self.path_label = QLabel("No file selected")
@@ -454,15 +467,7 @@ class FileLoaderWidget(QWidget):
         path_layout.addWidget(self.browse_btn)
         file_layout.addLayout(path_layout)
         
-        # File type selection
-        type_layout = QHBoxLayout()
-        type_label = QLabel("File Type:")
-        type_layout.addWidget(type_label)
         
-        self.type_combo = QComboBox()
-        self.type_combo.addItems(["Single TIFF", "Time Series"])
-        type_layout.addWidget(self.type_combo)
-        file_layout.addLayout(type_layout)
         
         layout.addWidget(file_group)
         
@@ -499,10 +504,47 @@ class FileLoaderWidget(QWidget):
         
         layout.addLayout(button_layout)
         
+        
+        # Image slider section
+        slider_group = QGroupBox("Image Navigation")
+        slider_layout = QVBoxLayout()
+        slider_group.setLayout(slider_layout)
+        
+        # Slider control
+        slider_control_layout = QHBoxLayout()
+        self.image_label = QLabel("Current Image: 1/1")
+        slider_control_layout.addWidget(self.image_label)
+        
+        self.prev_btn = QPushButton("Previous")
+        self.prev_btn.clicked.connect(self.on_prev_clicked)
+        self.prev_btn.setEnabled(False)
+        slider_control_layout.addWidget(self.prev_btn)
+        
+        self.next_btn = QPushButton("Next")
+        self.next_btn.clicked.connect(self.on_next_clicked)
+        self.next_btn.setEnabled(False)
+        slider_control_layout.addWidget(self.next_btn)
+        
+        slider_layout.addLayout(slider_control_layout)
+        
+        # Slider widget
+        slider_widget_layout = QHBoxLayout()
+        slider_widget_layout.addWidget(QLabel("Image:"))
+        self.image_slider = QSpinBox()
+        self.image_slider.setMinimum(1)
+        self.image_slider.setMaximum(1)
+        self.image_slider.setValue(1)
+        self.image_slider.valueChanged.connect(self.on_slider_changed)
+        slider_widget_layout.addWidget(self.image_slider)
+        
+        slider_layout.addLayout(slider_widget_layout)
+        layout.addWidget(slider_group)
+        
+        
         # Status section
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
-        self.status_text.setMaximumHeight(100)
+        self.status_text.setMaximumHeight(300)
         layout.addWidget(QLabel("Status:"))
         layout.addWidget(self.status_text)
         
@@ -521,7 +563,7 @@ class FileLoaderWidget(QWidget):
     def on_browse_clicked(self):
         """Handle browse button click to select input file or folder."""
         file_path = QFileDialog.getExistingDirectory(self, "Select Folder")
-        
+        app_state.folder_type = self.type_combo.currentText()
         if file_path:
             app_state.loaded_folder = file_path
             self.path_label.setText(os.path.basename(file_path))
@@ -529,12 +571,28 @@ class FileLoaderWidget(QWidget):
             self.log_status(f"Selected folder: {file_path}")
             
             #check if there's an output folder already
-            directory_list = [item for item in os.listdir(file_path) if (os.path.isdir(os.path.join(file_path,item)))]
-            if 'nellie_output' in directory_list:
-                app_state.nellie_output_path = os.path.join(file_path, 'nellie_output')
-                self.view_btn.setEnabled(True)
-                self.log_status(f'{file_path} has a processed output already!')
-                
+            if app_state.folder_type == 'Single TIFF':
+                directory_list = [item for item in os.listdir(file_path) if (os.path.isdir(os.path.join(file_path,item)))]
+                if 'nellie_output' in directory_list:
+                    app_state.nellie_output_path = os.path.join(file_path, 'nellie_output')
+                    self.view_btn.setEnabled(True)
+                    self.log_status(f'{file_path} has a processed output already!')
+            
+            elif app_state.folder_type == 'Time Series':
+                subdirs = [d for d in os.listdir(app_state.loaded_folder) 
+                          if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+                if subdirs:
+                    # Process each subfolder as a time point
+                    self.log_status(f"Found {len(subdirs)} time point folders")
+                    subdirs = natsorted(subdirs)
+                    for subdir in subdirs:
+                        subdir_path = os.path.join(app_state.loaded_folder, subdir)
+                        check_nellie_path = os.path.exists(os.path.join(subdir_path,'nellie_output'))
+                    
+                        if check_nellie_path :
+                            self.view_btn.setEnabled(True)
+                            self.log_status(f"Results to view for {subdir_path} are already available!")
+            
             
     def on_process_clicked(self):
         """Handle process button click to run Nellie processing."""
@@ -545,30 +603,80 @@ class FileLoaderWidget(QWidget):
         app_state.folder_type = self.type_combo.currentText()
         
         try:
-            # Find TIFF files in the directory
-            tif_files = [f for f in os.listdir(app_state.loaded_folder) if f.endswith('.ome.tif')]
+        
             
-            if not tif_files:
-                self.log_status("No .ome.tif files found in the selected folder.")
-                return
-                
-            # Use the first TIFF file found
-            input_file = tif_files[0]
-            im_path = os.path.join(app_state.loaded_folder, input_file)
-            
-            self.log_status(f"Processing {im_path}...")
-            
-            # Run Nellie processing
-            im_info = run_nellie_processing(
-                im_path, 
-                remove_edges=self.remove_edges_check.isChecked(),
-                ch=self.channel_spin.value()
-            )
-            
-            if im_info:
-                # Set output path
+            if app_state.folder_type == 'Single TIFF':
+                # Find TIFF files in the directory
                 app_state.nellie_output_path = os.path.join(app_state.loaded_folder, 'nellie_output')
-                self.log_status("Processing complete!")
+                tif_files = [f for f in os.listdir(app_state.loaded_folder) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
+                
+                if not tif_files:
+                    self.log_status("No .ome.tif files found in the selected folder.")
+                    return
+                    
+                # Use the first TIFF file found
+                input_file = tif_files[0]
+                im_path = os.path.join(app_state.loaded_folder, input_file)
+                
+                self.log_status(f"Processing {im_path}...")
+                
+                # Run Nellie processing
+                im_info = run_nellie_processing(
+                    im_path, 
+                    remove_edges=self.remove_edges_check.isChecked(),
+                    ch=self.channel_spin.value()
+                )
+                
+                if im_info:
+                    self.log_status("Processing complete!")
+                    self.view_btn.setEnabled(True)
+                    
+            elif app_state.folder_type == 'Time Series':
+                
+                # Look for time series subfolders or files
+                time_points = []
+                
+                # Check if we have subfolders for each time point
+                subdirs = [d for d in os.listdir(app_state.loaded_folder) 
+                          if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+                
+                if subdirs:
+                    # Process each subfolder as a time point
+                    self.log_status(f"Found {len(subdirs)} time point folders")
+                    
+                    for subdir in subdirs:
+                        subdir_path = os.path.join(app_state.loaded_folder, subdir)
+                        tif_files = [f for f in os.listdir(subdir_path) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
+                        
+                        if tif_files:
+                            # Use the first TIFF file in this subfolder
+                            input_file = tif_files[0]
+                            im_path = os.path.join(subdir_path, input_file)
+                            time_points.append((subdir, im_path))
+                            self.log_status(f"Added time point from {subdir}: {input_file}")
+                time_points = natsorted(time_points)
+                # Process each time point
+                if not time_points:
+                    self.log_status("No time points found to process.")
+                    return
+                    
+                self.log_status(f"Processing {len(time_points)} time points...")
+                
+                for i, (time_point, im_path) in enumerate(time_points):
+                    self.log_status(f"Processing time point {time_point} ({i+1}/{len(time_points)})")
+                    
+                    # Run Nellie processing with time point in the output name
+                    im_info = run_nellie_processing(
+                        im_path, 
+                        num_t=i,  # Pass time point index
+                        remove_edges=self.remove_edges_check.isChecked(),
+                        ch=self.channel_spin.value()
+                    )
+                    
+                    if im_info:
+                        self.log_status(f"Processing complete for time point {time_point}")
+                
+                self.log_status("All time points processed successfully!")
                 self.view_btn.setEnabled(True)
                 
         except Exception as e:
@@ -576,46 +684,139 @@ class FileLoaderWidget(QWidget):
             
     def on_view_clicked(self):
         """Handle view button click to display processing results."""
-        if not app_state.nellie_output_path or not os.path.exists(app_state.nellie_output_path):
-            self.log_status("No results to view. Please run processing first.")
-            return
+        current = self.image_slider.value()
+        if current == self.image_slider.maximum():
+            self.next_btn.setEnabled(False)
+        elif current == 0:
+            self.prev_btn.setEnabled(False)
             
+        app_state.folder_type = self.type_combo.currentText()
+       
         try:
-            # Clear existing layers
-            self.viewer.layers.clear()
-            
-            # Load images
-            raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
-            
-            if raw_im is not None and skel_im is not None:
-                # Add layers to viewer
-                app_state.raw_layer = self.viewer.add_image(
-                    raw_im, 
-                    scale=[1.765, 1, 1],  # Z, Y, X scaling
-                    name='Raw Image'
-                )
+            if app_state.folder_type == 'Single TIFF':
+                if not app_state.nellie_output_path or not os.path.exists(app_state.nellie_output_path):
+                    self.log_status("No results to view. Please run processing first.")
+                    return
+                # Clear existing layers
+                self.viewer.layers.clear()
                 
-                app_state.skeleton_layer = self.viewer.add_points(
-                    skel_im,
-                    size=3,
-                    face_color=face_colors,
-                    scale=[1.765, 1, 1],
-                    name='Skeleton'
-                )
+                # Load images
+                raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
                 
-                # Add extracted points if available
-                if positions and colors:
-                    app_state.points_layer = self.viewer.add_points(
-                        positions,
-                        size=5,
-                        face_color=colors,
-                        scale=[1.765, 1, 1],
-                        name='Extracted Nodes'
+                if raw_im is not None and skel_im is not None:
+                    # Add layers to viewer
+                    app_state.raw_layer = self.viewer.add_image(
+                        raw_im, 
+                        scale=[1.765, 1, 1],  # Z, Y, X scaling
+                        name='Raw Image'
                     )
                     
-                self.log_status("Visualization loaded successfully")
-                self.network_btn.setEnabled(True)
+                    app_state.skeleton_layer = self.viewer.add_points(
+                        skel_im,
+                        size=3,
+                        face_color=face_colors,
+                        scale=[1.765, 1, 1],
+                        name='Skeleton'
+                    )
+                    
+                    # Add extracted points if available
+                    if positions and colors:
+                        app_state.points_layer = self.viewer.add_points(
+                            positions,
+                            size=5,
+                            face_color=colors,
+                            scale=[1.765, 1, 1],
+                            name='Extracted Nodes'
+                        )
+                        
+                    self.log_status("Visualization loaded successfully")
+                    self.network_btn.setEnabled(True)
                 
+            elif app_state.folder_type == 'Time Series':
+                # Look for time series subfolders or files
+                image_sets = {}
+                # Check if we have subfolders for each time point
+                subdirs = [d for d in os.listdir(app_state.loaded_folder) 
+                          if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+                if subdirs:
+                    # Process each subfolder as a time point
+                    self.log_status(f"Found {len(subdirs)} time point folders")
+                    subdirs = natsorted(subdirs)
+                    for subdir in subdirs:
+                        subdir_path = os.path.join(app_state.loaded_folder, subdir)
+                        check_nellie_path = os.path.exists(os.path.join(subdir_path , 'nellie_output'))
+                        tif_files = [f for f in os.listdir(subdir_path) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
+                        
+                        if not check_nellie_path :
+                            self.log_status(f"No results to view for {subdir_path} Please run processing first.")
+                            continue
+                        
+                        for file in tif_files:
+                            if file.endswith('.ome.tif'):
+                                # Extract base name (usually contains time point info)
+                                base_parts = file.split('.')
+                                if len(base_parts) > 1:
+                                    base_name = base_parts[0]  # Remove the last part (ch0, etc.)
+                                    if base_name not in image_sets:
+                                        image_sets[base_name] = os.path.join(subdir_path,file)
+                                    
+                                
+                    # Store image sets in app state
+                    app_state.image_sets_keys = natsorted(image_sets.keys())
+                    
+                    for k in app_state.image_sets_keys:
+                        app_state.image_sets[k] = image_sets[k]
+                    
+                    # Update slider settings
+                    num_images = len(app_state.image_sets)
+                    self.image_slider.setMaximum(max(1, num_images))
+                    self.image_slider.setValue(1)
+                    self.image_label.setText(f"Current Image: 1/{max(1, num_images)}")
+                    
+                    # Enable/disable navigation buttons
+                    self.prev_btn.setEnabled(num_images > 1)
+                    self.next_btn.setEnabled(num_images > 1)
+                    
+                    # Clear existing layers
+                    self.viewer.layers.clear()
+                    
+                    # Initialize with first image
+                    if num_images > 0:
+                        self.update_displayed_image(0)
+                    
+                    else:
+                        # Fallback to original method if no image sets were found
+                        raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+                        
+                        if raw_im is not None and skel_im is not None:
+                            # Add layers to viewer
+                            app_state.raw_layer = self.viewer.add_image(
+                                raw_im, 
+                                scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                name='Raw Image'
+                            )
+                            
+                            app_state.skeleton_layer = self.viewer.add_points(
+                                skel_im,
+                                size=3,
+                                face_color=face_colors,
+                                scale=[1.765, 1, 1],
+                                name='Skeleton'
+                            )
+                            
+                            # Add extracted points if available
+                            if positions and colors:
+                                app_state.points_layer = self.viewer.add_points(
+                                    positions,
+                                    size=5,
+                                    face_color=colors,
+                                    scale=[1.765, 1, 1],
+                                    name='Extracted Nodes'
+                                )
+                    
+                        self.log_status(f"Visualization loaded successfully. Found {num_images} image sets.")
+                        self.network_btn.setEnabled(True)
+                    
         except Exception as e:
             self.log_status(f"Error viewing results: {str(e)}")
             
@@ -645,6 +846,125 @@ class FileLoaderWidget(QWidget):
                 
         except Exception as e:
             self.log_status(f"Error generating network: {str(e)}")
+            
+    def on_prev_clicked(self):
+        """Handle previous button click to show previous image."""
+        current = self.image_slider.value()
+        if current > 1:
+            self.next_btn.setEnabled(True)
+            self.image_slider.setValue(current - 1)
+        elif (current) == 0:
+            self.prev_btn.setEnabled(False)            
+            self.log_status('Reached End of Time Series')
+
+    def on_next_clicked(self):
+        """Handle next button click to show next image."""
+        current = self.image_slider.value()
+        if current < self.image_slider.maximum():
+            self.prev_btn.setEnabled(True)
+            self.image_slider.setValue(current + 1)
+        elif (current) == self.image_slider.maximum():
+            self.next_btn.setEnabled(False)            
+            self.log_status('Reached End of Time Series')
+            
+    def on_slider_changed(self, value):
+        """Handle slider value change to update displayed image."""
+        self.image_label.setText(f"Current Image: {value}/{self.image_slider.maximum()}")
+        self.update_displayed_image(value - 1)  # Convert to 0-based index
+        
+
+    def update_displayed_image(self, index):
+        """Update the displayed image based on slider index."""
+        current = self.image_slider.value()
+        if current < self.image_slider.maximum():
+            self.prev_btn.setEnabled(True)
+
+            
+        try:
+            
+            if index < 0 or index >= len(app_state.image_sets_keys):
+                self.log_status(f"Invalid image index: {index+1}")
+                return
+                
+            # Get the image set for the selected index
+            current_im_in = app_state.image_sets_keys[index]
+            self.log_status(f"Loading image: {current_im_in}")
+            
+            
+                        
+            subdirs = [d for d in os.listdir(app_state.loaded_folder) 
+                      if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+            subdirs = natsorted(subdirs)
+            subdir = subdirs[index]
+            
+            if int(subdir)>0:
+                
+                subdir_path = os.path.join(app_state.loaded_folder, subdir)
+                check_nellie_path = os.path.exists(os.path.join(subdir_path, 'nellie_output'))
+                nellie_op_path = os.path.join(subdir_path , 'nellie_output')
+                
+            
+                        
+                if(check_nellie_path):
+                    # Load images
+                    raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(nellie_op_path)
+                    
+                    # Clear existing layers
+                    self.viewer.layers.clear()
+                    
+                    if raw_im is not None and skel_im is not None:
+                        # Add layers to viewer
+                        app_state.raw_layer = self.viewer.add_image(
+                            raw_im, 
+                            scale=[1.765, 1, 1],  # Z, Y, X scaling
+                            name='Raw Image'
+                        )
+                        
+                        app_state.skeleton_layer = self.viewer.add_points(
+                            skel_im,
+                            size=3,
+                            face_color=face_colors,
+                            scale=[1.765, 1, 1],
+                            name='Skeleton'
+                        )
+                        
+                        # Add extracted points if available
+                        if positions and colors:
+                            app_state.points_layer = self.viewer.add_points(
+                                positions,
+                                size=5,
+                                face_color=colors,
+                                scale=[1.765, 1, 1],
+                                name='Extracted Nodes'
+                            )
+                            
+                        self.log_status(f"Visualization for {nellie_op_path} loaded successfully")
+                        self.network_btn.setEnabled(True)
+                    
+                
+                else:
+                   tif_files = [f for f in os.listdir(subdir_path) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
+                   for file in tif_files:                            
+                       raw_im_path = (os.path.join(subdir_path, file))
+                       self.log_status(f"Raw Image file found {file}.")
+                       
+                       raw_im = imread(raw_im_path)
+                       
+                       
+                       # Clear existing layers
+                       self.viewer.layers.clear()
+                       
+                       # Add new layers
+                       app_state.raw_layer = self.viewer.add_image(
+                           raw_im, 
+                           scale=[1.765, 1, 1],  # Z, Y, X scaling
+                           name=f'Raw Image {index+1}'
+                       )
+                
+                    
+        except Exception as e:
+            self.log_status(f"Error updating image: {str(e)}")
+        
 #%%
 # ============= MAIN APP =============
 
