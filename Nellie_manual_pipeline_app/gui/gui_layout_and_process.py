@@ -20,7 +20,7 @@ from processing.network_generator import get_network
 #from modifying_topology.add_junction import load_junction
 from modifying_topology.edit_node import highlight
 from modifying_topology.add_edge import join
-
+from modifying_topology.remove_edge import remove
 
 class FileLoaderWidget(QWidget):
     """Widget for loading image files and setting processing options."""
@@ -345,10 +345,13 @@ class FileLoaderWidget(QWidget):
                     @viewer.bind_key('j')
                     def join_points(viewer):
                         if (len(list(viewer.layers[1].selected_data))!=2):
-                            self.log_status("Need to select exactly 2 nodes to join.")
+                            self.log_status("Need to select exactly 2 nodes to join on the skeleton layer.")
                             return
                         join(viewer)
 
+                        # Clear existing layers
+                        self.viewer.layers.clear()
+                
                         raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
                 
                         if raw_im is not None and skel_im is not None:
@@ -378,6 +381,50 @@ class FileLoaderWidget(QWidget):
                                     name='Extracted Nodes'
                                 )
                             self.log_status("Joined Nodes sucessfully")
+
+                    @viewer.bind_key('r')
+                    def remove_edge(viewer):
+                        flag = remove(viewer)
+                        if (len(list(viewer.layers[1].selected_data))!=2):
+                            self.log_status("Need to select exactly 2 nodes to remove on the skeleton layer.")
+                            return
+                        elif flag:
+                            self.log_status("Need to select exactly 2 nodes that are BOTH NOT RED to remove on the skeleton layer.")
+                            return
+
+                        # Clear existing layers
+                        self.viewer.layers.clear()
+                
+                        raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+                
+                        if raw_im is not None and skel_im is not None:
+                            
+                            # Add layers to viewer
+                            app_state.raw_layer = self.viewer.add_image(
+                                raw_im, 
+                                scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                name='Raw Image'
+                            )
+                            
+                            app_state.skeleton_layer = self.viewer.add_points(
+                                skel_im,
+                                size=3,
+                                face_color=face_colors,
+                                scale=[1.765, 1, 1],
+                                name='Skeleton'
+                            )
+                            
+                            # Add extracted points if available
+                            if positions and colors:
+                                app_state.points_layer = self.viewer.add_points(
+                                    positions,
+                                    size=5,
+                                    face_color=colors,
+                                    scale=[1.765, 1, 1],
+                                    name='Extracted Nodes'
+                                )
+                            self.log_status("Broke Nodes sucessfully")
+                            return
 
                     self.log_status("Visualization loaded successfully")
                     self.network_btn.setEnabled(True)
@@ -488,9 +535,83 @@ class FileLoaderWidget(QWidget):
                             def join_points(viewer):
                                 if (len(list(viewer.layers[1].selected_data))!=2):
                                     self.log_status("Need to select exactly 2 nodes to join.")
+                                    join(viewer)
+                                    # Clear existing layers
+                                    self.viewer.layers.clear()
+                
+                                    raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+                
+                                    if raw_im is not None and skel_im is not None:
+                            
+                                     # Add layers to viewer
+                                        app_state.raw_layer = self.viewer.add_image(
+                                                            raw_im, 
+                                                            scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                                            name='Raw Image'
+                                                            )
+                                    
+                                    app_state.skeleton_layer = self.viewer.add_points(
+                                        skel_im,
+                                        size=3,
+                                        face_color=face_colors,
+                                        scale=[1.765, 1, 1],
+                                        name='Skeleton'
+                                    )
+                                    
+                                    # Add extracted points if available
+                                    if positions and colors:
+                                        app_state.points_layer = self.viewer.add_points(
+                                            positions,
+                                            size=5,
+                                            face_color=colors,
+                                            scale=[1.765, 1, 1],
+                                            name='Extracted Nodes'
+                                        )
+                                    self.log_status("Joined Nodes sucessfully")
                                     return
-                                join(viewer)
+
+                            @viewer.bind_key('r')
+                            def remove_edge(viewer):
+                                flag = remove(viewer)
+                                if (len(list(viewer.layers[1].selected_data))!=2):
+                                    self.log_status("Need to select exactly 2 nodes to remove on the skeleton layer.")
+                                    return
+                                elif flag:
+                                    self.log_status("Need to select exactly 2 nodes that are BOTH NOT RED to remove on the skeleton layer.")
+                                    return
+                                # Clear existing layers
+                                self.viewer.layers.clear()
+                
+                                raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+            
+                                if raw_im is not None and skel_im is not None:
+                        
+                                    # Add layers to viewer
+                                    app_state.raw_layer = self.viewer.add_image(
+                                                        raw_im, 
+                                                        scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                                        name='Raw Image'
+                                                        )
                                 
+                                app_state.skeleton_layer = self.viewer.add_points(
+                                    skel_im,
+                                    size=3,
+                                    face_color=face_colors,
+                                    scale=[1.765, 1, 1],
+                                    name='Skeleton'
+                                )
+                                
+                                # Add extracted points if available
+                                if positions and colors:
+                                    app_state.points_layer = self.viewer.add_points(
+                                        positions,
+                                        size=5,
+                                        face_color=colors,
+                                        scale=[1.765, 1, 1],
+                                        name='Extracted Nodes'
+                                    )
+                                self.log_status("Broke Nodes sucessfully")                                
+                                return
                             self.log_status(f"Visualization loaded successfully. Found {num_images} image sets.")
                             self.network_btn.setEnabled(True)
                     
@@ -636,8 +757,85 @@ class FileLoaderWidget(QWidget):
                                 self.log_status("Need to select exactly 2 nodes to join.")
                                 return
                             join(viewer)
-                            self.log_status(f"Visualization for {nellie_op_path} loaded successfully")
-                            self.network_btn.setEnabled(True)
+                            # Clear existing layers
+                            self.viewer.layers.clear()
+            
+                            raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+        
+                            if raw_im is not None and skel_im is not None:
+                    
+                                # Add layers to viewer
+                                app_state.raw_layer = self.viewer.add_image(
+                                                    raw_im, 
+                                                    scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                                    name='Raw Image'
+                                                    )
+                            
+                            app_state.skeleton_layer = self.viewer.add_points(
+                                skel_im,
+                                size=3,
+                                face_color=face_colors,
+                                scale=[1.765, 1, 1],
+                                name='Skeleton'
+                            )
+                            
+                            # Add extracted points if available
+                            if positions and colors:
+                                app_state.points_layer = self.viewer.add_points(
+                                    positions,
+                                    size=5,
+                                    face_color=colors,
+                                    scale=[1.765, 1, 1],
+                                    name='Extracted Nodes'
+                                )
+                            self.log_status("Joined Nodes sucessfully")                                
+                            return
+
+                        @viewer.bind_key('r')
+                        def remove_edge(viewer):
+                            flag = remove(viewer)
+                            if (len(list(viewer.layers[1].selected_data))!=2):
+                                self.log_status("Need to select exactly 2 nodes to remove on the skeleton layer.")
+                                return
+                            elif flag:
+                                self.log_status("Need to select exactly 2 nodes that are BOTH NOT RED to remove on the skeleton layer.")
+                                return
+                            # Clear existing layers
+                            self.viewer.layers.clear()
+            
+                            raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+        
+                            if raw_im is not None and skel_im is not None:
+                    
+                                # Add layers to viewer
+                                app_state.raw_layer = self.viewer.add_image(
+                                                    raw_im, 
+                                                    scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                                    name='Raw Image'
+                                                    )
+                            
+                            app_state.skeleton_layer = self.viewer.add_points(
+                                skel_im,
+                                size=3,
+                                face_color=face_colors,
+                                scale=[1.765, 1, 1],
+                                name='Skeleton'
+                            )
+                            
+                            # Add extracted points if available
+                            if positions and colors:
+                                app_state.points_layer = self.viewer.add_points(
+                                    positions,
+                                    size=5,
+                                    face_color=colors,
+                                    scale=[1.765, 1, 1],
+                                    name='Extracted Nodes'
+                                )
+                            self.log_status("Broke Nodes sucessfully")                                
+                            return
+                        
+                        self.log_status(f"Visualization for {nellie_op_path} loaded successfully")
+                        self.network_btn.setEnabled(True)
                         
                 
                 else:

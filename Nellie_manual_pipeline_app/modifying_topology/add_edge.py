@@ -24,8 +24,13 @@ def join(viewer):
     node_positions_fl = [get_float_pos_comma(st) for st in node_positions]
     print(node_positions_fl)
     print(pos_0,pos_1)
-    check_ind_0 = np.any(np.all(pos_0== node_positions_fl))
-    check_ind_1 = np.any(np.all(pos_1== node_positions_fl))
+    
+    check_ind_0 = False
+    check_ind_1 = False
+    for posts in node_positions_fl:
+        check_ind_0 = np.all(pos_0 == posts) or check_ind_0
+        check_ind_1 = np.all(pos_1 == posts) or check_ind_1
+
 
     if check_ind_0 and check_ind_1:
         
