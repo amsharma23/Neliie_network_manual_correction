@@ -6,7 +6,6 @@ Created on Mon Mar 10 17:13:31 2025
 @author: amansharma
 """
 import re
-
 def get_float_pos_comma(st):
     """Parse string representation of position to get coordinates.
     

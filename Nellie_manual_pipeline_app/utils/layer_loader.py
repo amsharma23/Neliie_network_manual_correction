@@ -37,13 +37,13 @@ def load_image_and_skeleton(nellie_output_path):
         basename = raw_file.split(".")[0]
         
         # Find skeleton image file
-        skel_files = [f for f in tif_files if f.endswith('-ch0-im_pixel_class.ome.tif')]
+        skel_files = [f for f in tif_files if f.endswith('_pixel_class.ome.tif')]
         if not skel_files:
             show_error("No skeleton file found in the output directory")
             return None, None, [], [], []
             
         skel_file = skel_files[0]
-        
+              
         # Get full paths
         raw_im_path = os.path.join(nellie_output_path, raw_file)
         skel_im_path = os.path.join(nellie_output_path, skel_file)
@@ -53,14 +53,14 @@ def load_image_and_skeleton(nellie_output_path):
         adjacency_path = os.path.join(nellie_output_path, f"{basename}_adjacency_list.csv")
         app_state.node_path = node_path_extracted
         
+
         # Load images
         raw_im = imread(raw_im_path)
         skel_im = imread(skel_im_path)
         skel_im = np.transpose(np.nonzero(skel_im))
-        
         # Default all points to red
-        face_color_arr = ['red' for _ in range(len(skel_im))]
-        
+        face_color_arr = ['red' for elm in range(len(skel_im))]
+
         #Check if an adjaceny list exists and convert to extracted csv if so
         if os.path.exists(adjacency_path) and not os.path.exists(node_path_extracted):
             adjacency_to_extracted(node_path_extracted,adjacency_path)
@@ -79,7 +79,6 @@ def load_image_and_skeleton(nellie_output_path):
             if not node_df.empty and not pd.isna(node_df.index.max()):
                 # Extract node positions and degrees
                 pos_extracted = node_df['Position(ZXY)'].values
-                show_info(f"Extracted positions: {pos_extracted}")
                 
                 deg_extracted = node_df['Degree of Node'].values.astype(int)
                 positions = [get_float_pos_comma(el) for el in pos_extracted]
@@ -90,6 +89,19 @@ def load_image_and_skeleton(nellie_output_path):
                         colors.append('blue')  # Endpoint nodes
                     else:
                         colors.append('green')  # Junction nodes
+                    
+                    # Map skeleton points to matching positions
+                
+                # Create a mapping of positions to colors
+                position_color_map = {}
+                for i, pos in enumerate(positions):
+                    position_color_map[tuple(pos)] = colors[i]
+
+                 # Update face_color_arr based on position matches
+                for i, point in enumerate(skel_im):
+                    point_tuple = tuple(point)
+                    if point_tuple in position_color_map:
+                        face_color_arr[i] = position_color_map[point_tuple]
                         
                 return raw_im, skel_im, face_color_arr, positions, colors
                 

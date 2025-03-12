@@ -41,7 +41,7 @@ def get_network(pixel_class_path):
         struct = np.ones((3, 3, 3))
         
         # Extract tree structures
-        trees, num_trees = labell(skeleton > 0, structure=struct)
+        trees, num_trees = labell(skeleton>0, structure=struct)
         show_info(f"Found {num_trees} tree structures")
         
         # Convert tips and lone-tips to nodes (all nodes will have value 4)
@@ -78,12 +78,12 @@ def get_network(pixel_class_path):
                 # Fallback if node has no voxels (shouldn't happen)
                 node_positions[j_id] = (0, 0, 0)
             
-            
             # Check 3x3x3 neighborhood around each node voxel
             for (x, y, z) in j_coords:
                 for dx in [-1, 0, 1]:
                     for dy in [-1, 0, 1]:
                         for dz in [-1, 0, 1]:
+            
                             # Skip the center voxel
                             if dx == 0 and dy == 0 and dz == 0:
                                 continue

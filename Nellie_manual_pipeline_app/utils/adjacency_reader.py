@@ -20,13 +20,20 @@ def adjacency_to_extracted(extracted_csv_path,adjacency_path):
     adjs_list = adj_df['adjacencies'].tolist()
     deg_nd_i = []
     deg_nd = []
+    node_id = []
+    niegh_id = []
     
-    for el in adjs_list:
+    for eln,el in enumerate(adjs_list):
         elf = get_float_pos_comma(el)
         deg_nd_i.append(len(elf))
         if (len(elf)>0):
-            deg_nd.append(len(elf))
-        
+            node_id.append((adj_df['node'].tolist())[eln])
+            if (float(adj_df['node'].tolist()[eln]) in elf):
+                deg_nd.append(len(elf)+1)
+            else:
+                deg_nd.append(len(elf))
+            niegh_id.append(elf)
+
     pos_x = adj_df['pos_x'].tolist()
     pos_y = adj_df['pos_y'].tolist()
     pos_z = adj_df['pos_z'].tolist()
@@ -35,9 +42,8 @@ def adjacency_to_extracted(extracted_csv_path,adjacency_path):
     
     ext_df['Degree of Node'] = deg_nd
     ext_df['Position(ZXY)'] = pos_zxy
-    
-    ext_df = pd.DataFrame.from_dict(ext_df)
-    
-   
-    
+    ext_df['Node ID'] = node_id
+    ext_df['Neighbour ID'] = niegh_id
+
+    ext_df = pd.DataFrame.from_dict(ext_df)    
     ext_df.to_csv(extracted_csv_path,index=False)    

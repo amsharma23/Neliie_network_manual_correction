@@ -16,6 +16,11 @@ from natsort import natsorted
 from processing.run_nellie_skeleton import run_nellie_processing
 from utils.layer_loader import load_image_and_skeleton
 from processing.network_generator import get_network
+#from modifying_topology.add_tip import load_tip 
+#from modifying_topology.add_junction import load_junction
+from modifying_topology.edit_node import highlight
+from modifying_topology.add_edge import join
+
 
 class FileLoaderWidget(QWidget):
     """Widget for loading image files and setting processing options."""
@@ -59,9 +64,7 @@ class FileLoaderWidget(QWidget):
         self.browse_btn.clicked.connect(self.on_browse_clicked)
         path_layout.addWidget(self.browse_btn)
         file_layout.addLayout(path_layout)
-        
-        
-        
+
         layout.addWidget(file_group)
         
         # Processing options section
@@ -132,8 +135,7 @@ class FileLoaderWidget(QWidget):
         
         slider_layout.addLayout(slider_widget_layout)
         layout.addWidget(slider_group)
-        
-        
+    
         # Status section
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
@@ -174,10 +176,12 @@ class FileLoaderWidget(QWidget):
             elif app_state.folder_type == 'Time Series':
                 subdirs = [d for d in os.listdir(app_state.loaded_folder) 
                           if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+                
                 if subdirs:
                     # Process each subfolder as a time point
                     self.log_status(f"Found {len(subdirs)} time point folders")
                     subdirs = natsorted(subdirs)
+                    
                     for subdir in subdirs:
                         subdir_path = os.path.join(app_state.loaded_folder, subdir)
                         check_nellie_path = os.path.exists(os.path.join(subdir_path,'nellie_output'))
@@ -191,13 +195,10 @@ class FileLoaderWidget(QWidget):
         """Handle process button click to run Nellie processing."""
         if not app_state.loaded_folder:
             self.log_status("No folder selected. Please select a folder first.")
-            return
-            
+            return    
         app_state.folder_type = self.type_combo.currentText()
         
-        try:
-        
-            
+        try:        
             if app_state.folder_type == 'Single TIFF':
                 # Find TIFF files in the directory
                 app_state.nellie_output_path = os.path.join(app_state.loaded_folder, 'nellie_output')
@@ -246,13 +247,15 @@ class FileLoaderWidget(QWidget):
                             input_file = tif_files[0]
                             im_path = os.path.join(subdir_path, input_file)
                             time_points.append((subdir, im_path))
-                            self.log_status(f"Added time point from {subdir}: {input_file}")
+                            self.log_status(f"Added time point from {subdir}: {input_file}"
+                            )
                 time_points = natsorted(time_points)
+                
                 # Process each time point
                 if not time_points:
                     self.log_status("No time points found to process.")
                     return
-                    
+            
                 self.log_status(f"Processing {len(time_points)} time points...")
                 
                 for i, (time_point, im_path) in enumerate(time_points):
@@ -278,6 +281,7 @@ class FileLoaderWidget(QWidget):
     def on_view_clicked(self):
         """Handle view button click to display processing results."""
         current = self.image_slider.value()
+        viewer = self.viewer
         if current == self.image_slider.maximum():
             self.next_btn.setEnabled(False)
         elif current == 0:
@@ -297,6 +301,7 @@ class FileLoaderWidget(QWidget):
                 raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
                 
                 if raw_im is not None and skel_im is not None:
+                    
                     # Add layers to viewer
                     app_state.raw_layer = self.viewer.add_image(
                         raw_im, 
@@ -321,17 +326,72 @@ class FileLoaderWidget(QWidget):
                             scale=[1.765, 1, 1],
                             name='Extracted Nodes'
                         )
-                        
+                    
+                    @viewer.bind_key('e')
+                    def see_connections(viewer):
+                        if (len(list(viewer.layers[1].selected_data))==0):
+                            self.log_status("No node selected to edit.")
+                            return
+                        highlight(viewer)
+                    @viewer.bind_key('u')
+                    def unseen(viewer):
+                        if (len(list(viewer.layers[1].selected_data))==0):
+                            self.log_status("No node selected to edit.")
+                            return
+                        viewer.layers.remove('Connected Nodes')
+                        app_state.editable_node_positions = []
+                        app_state.selected_node_position = []
+
+                    @viewer.bind_key('j')
+                    def join_points(viewer):
+                        if (len(list(viewer.layers[1].selected_data))!=2):
+                            self.log_status("Need to select exactly 2 nodes to join.")
+                            return
+                        join(viewer)
+
+                        raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
+                
+                        if raw_im is not None and skel_im is not None:
+                            
+                            # Add layers to viewer
+                            app_state.raw_layer = self.viewer.add_image(
+                                raw_im, 
+                                scale=[1.765, 1, 1],  # Z, Y, X scaling
+                                name='Raw Image'
+                            )
+                            
+                            app_state.skeleton_layer = self.viewer.add_points(
+                                skel_im,
+                                size=3,
+                                face_color=face_colors,
+                                scale=[1.765, 1, 1],
+                                name='Skeleton'
+                            )
+                            
+                            # Add extracted points if available
+                            if positions and colors:
+                                app_state.points_layer = self.viewer.add_points(
+                                    positions,
+                                    size=5,
+                                    face_color=colors,
+                                    scale=[1.765, 1, 1],
+                                    name='Extracted Nodes'
+                                )
+                            self.log_status("Joined Nodes sucessfully")
+
                     self.log_status("Visualization loaded successfully")
                     self.network_btn.setEnabled(True)
                 
             elif app_state.folder_type == 'Time Series':
+                
                 # Look for time series subfolders or files
                 image_sets = {}
+                
                 # Check if we have subfolders for each time point
                 subdirs = [d for d in os.listdir(app_state.loaded_folder) 
                           if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
                 if subdirs:
+                    
                     # Process each subfolder as a time point
                     self.log_status(f"Found {len(subdirs)} time point folders")
                     subdirs = natsorted(subdirs)
@@ -346,6 +406,7 @@ class FileLoaderWidget(QWidget):
                         
                         for file in tif_files:
                             if file.endswith('.ome.tif'):
+                                
                                 # Extract base name (usually contains time point info)
                                 base_parts = file.split('.')
                                 if len(base_parts) > 1:
@@ -378,10 +439,12 @@ class FileLoaderWidget(QWidget):
                         self.update_displayed_image(0)
                     
                     else:
+                        
                         # Fallback to original method if no image sets were found
                         raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
                         
                         if raw_im is not None and skel_im is not None:
+                            
                             # Add layers to viewer
                             app_state.raw_layer = self.viewer.add_image(
                                 raw_im, 
@@ -406,9 +469,30 @@ class FileLoaderWidget(QWidget):
                                     scale=[1.765, 1, 1],
                                     name='Extracted Nodes'
                                 )
-                    
-                        self.log_status(f"Visualization loaded successfully. Found {num_images} image sets.")
-                        self.network_btn.setEnabled(True)
+                            
+                            @viewer.bind_key('e')
+                            def edit(viewer):
+                                if (len(list(viewer.layers[1].selected_data))==0):
+                                    self.log_status("No node selected to edit.")
+                                    return
+                                highlight(viewer)
+                            @viewer.bind_key('u')
+                            def unseen(viewer):
+                                if (len(list(viewer.layers[1].selected_data))==0):
+                                    self.log_status("No node selected to edit.")
+                                    return
+                                viewer.layers.remove('Connected Nodes')
+                                app_state.editable_node_positions = []
+                                app_state.selected_node_position = []
+                            @viewer.bind_key('j')
+                            def join_points(viewer):
+                                if (len(list(viewer.layers[1].selected_data))!=2):
+                                    self.log_status("Need to select exactly 2 nodes to join.")
+                                    return
+                                join(viewer)
+                                
+                            self.log_status(f"Visualization loaded successfully. Found {num_images} image sets.")
+                            self.network_btn.setEnabled(True)
                     
         except Exception as e:
             self.log_status(f"Error viewing results: {str(e)}")
@@ -420,6 +504,7 @@ class FileLoaderWidget(QWidget):
             return
             
         try:
+            
             # Find pixel classification file
             tif_files = os.listdir(app_state.nellie_output_path)
             pixel_class_files = [f for f in tif_files if f.endswith('-ch0-im_pixel_class.ome.tif')]
@@ -469,6 +554,7 @@ class FileLoaderWidget(QWidget):
     def update_displayed_image(self, index):
         """Update the displayed image based on slider index."""
         current = self.image_slider.value()
+        viewer = self.viewer
         if current < self.image_slider.maximum():
             self.prev_btn.setEnabled(True)
 
@@ -482,8 +568,6 @@ class FileLoaderWidget(QWidget):
             # Get the image set for the selected index
             current_im_in = app_state.image_sets_keys[index]
             self.log_status(f"Loading image: {current_im_in}")
-            
-            
                         
             subdirs = [d for d in os.listdir(app_state.loaded_folder) 
                       if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
@@ -495,12 +579,13 @@ class FileLoaderWidget(QWidget):
                 subdir_path = os.path.join(app_state.loaded_folder, subdir)
                 check_nellie_path = os.path.exists(os.path.join(subdir_path, 'nellie_output'))
                 nellie_op_path = os.path.join(subdir_path , 'nellie_output')
-                
+                app_state.nellie_output_path = nellie_op_path
             
                         
                 if(check_nellie_path):
+
                     # Load images
-                    raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(nellie_op_path)
+                    raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
                     
                     # Clear existing layers
                     self.viewer.layers.clear()
@@ -530,20 +615,39 @@ class FileLoaderWidget(QWidget):
                                 scale=[1.765, 1, 1],
                                 name='Extracted Nodes'
                             )
-                            
-                        self.log_status(f"Visualization for {nellie_op_path} loaded successfully")
-                        self.network_btn.setEnabled(True)
-                    
+                        
+                        @viewer.bind_key('e')
+                        def edit(viewer):
+                            if (len(list(viewer.layers[1].selected_data))==0):
+                                self.log_status("No node selected to edit.")
+                                return
+                            highlight(viewer)
+                        @viewer.bind_key('u')
+                        def unseen(viewer):
+                            if (len(list(viewer.layers[1].selected_data))==0):
+                                self.log_status("No node selected to edit.")
+                                return
+                            viewer.layers.remove('Connected Nodes')
+                            app_state.editable_node_positions = []
+                            app_state.selected_node_position = []
+                        @viewer.bind_key('j')
+                        def join_points(viewer):
+                            if (len(list(viewer.layers[1].selected_data))!=2):
+                                self.log_status("Need to select exactly 2 nodes to join.")
+                                return
+                            join(viewer)
+                            self.log_status(f"Visualization for {nellie_op_path} loaded successfully")
+                            self.network_btn.setEnabled(True)
+                        
                 
                 else:
                    tif_files = [f for f in os.listdir(subdir_path) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
                    for file in tif_files:                            
                        raw_im_path = (os.path.join(subdir_path, file))
-                       self.log_status(f"Raw Image file found {file}.")
+                       self.log_status(f"Only Raw Image file found {file}.")
                        
                        raw_im = imread(raw_im_path)
-                       
-                       
+                          
                        # Clear existing layers
                        self.viewer.layers.clear()
                        
