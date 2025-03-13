@@ -8,7 +8,7 @@ Created on Mon Mar 10 17:14:32 2025
 from tifffile import imread
 import os
 from napari.utils.notifications import show_info, show_warning, show_error
-from .adjacency_reader import adjacency_to_extracted
+from .edgelist_reader import edgelist_to_extracted
 import pandas as pd
 from app_state import app_state
 import numpy as np
@@ -50,7 +50,7 @@ def load_image_and_skeleton(nellie_output_path):
         
         # Check for node data file
         node_path_extracted = os.path.join(nellie_output_path, f"{basename}_extracted.csv")
-        adjacency_path = os.path.join(nellie_output_path, f"{basename}_adjacency_list.csv")
+        EL_path = os.path.join(nellie_output_path, f"{basename}_edge_list.txt")
         app_state.node_path = node_path_extracted
         
 
@@ -62,14 +62,14 @@ def load_image_and_skeleton(nellie_output_path):
         face_color_arr = ['red' for elm in range(len(skel_im))]
 
         #Check if an adjaceny list exists and convert to extracted csv if so
-        if os.path.exists(adjacency_path) and not os.path.exists(node_path_extracted):
-            adjacency_to_extracted(node_path_extracted,adjacency_path)
+        if os.path.exists(EL_path) and not os.path.exists(node_path_extracted):
+            edgelist_to_extracted(node_path_extracted,EL_path)
         
-        if os.path.exists(adjacency_path) and os.path.exists(node_path_extracted):
+        if os.path.exists(EL_path) and os.path.exists(node_path_extracted):
             node_df = pd.read_csv(node_path_extracted)
             app_state.node_dataframe = node_df            
             if node_df.empty or pd.isna(node_df.index.max()):
-                adjacency_to_extracted(node_path_extracted,adjacency_path)
+                edgelist_to_extracted(node_path_extracted,EL_path)
         
         # Process extracted nodes if available
         if os.path.exists(node_path_extracted):
