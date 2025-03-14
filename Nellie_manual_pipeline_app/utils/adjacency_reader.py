@@ -10,7 +10,7 @@ import pandas as pd
 from .parsing import get_float_pos_comma
 
 def adjacency_to_extracted(extracted_csv_path,adjacency_path):
-    
+    print(f"Extracting adjacency data from {adjacency_path}")
     adj_df = pd.read_csv(adjacency_path)
     if os.path.exists(extracted_csv_path):
         ext_df = pd.read_csv(extracted_csv_path)

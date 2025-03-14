@@ -28,5 +28,6 @@ class AppState:
         self.image_sets = {}
         self.selected_node_position = []
         self.editable_node_positions = []
+        self.graph_image_path = ""
 
 app_state = AppState()

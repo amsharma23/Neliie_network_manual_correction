@@ -162,7 +162,13 @@ def get_network(pixel_class_path):
                     pos_y = subG.nodes[node]['pos_y']
                     pos_z = subG.nodes[node]['pos_z']
                     
-                    adjacencies = sorted(list(subG[node]))
+                    adjacencies = []
+                    for neighbor in sorted(subG[node]):
+                    # Get the number of edges between the node and the neighbor
+                        edge_count = subG.number_of_edges(node, neighbor)
+                        # Add the neighbor multiple times based on the number of edges
+                        adjacencies.extend([neighbor] * edge_count)
+                    
                     writer.writerow([comp_num, node, pos_x, pos_y, pos_z, adjacencies])
             
         

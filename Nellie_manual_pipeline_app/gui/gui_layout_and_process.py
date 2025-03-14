@@ -9,22 +9,20 @@ from qtpy.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, 
 QLabel, QPushButton, QSpinBox, QTextEdit, 
 QVBoxLayout, QHBoxLayout, QWidget, QFileDialog)
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QLabel, QScrollArea
+
 from app_state import app_state
 import os
-from tifffile import imread
-from natsort import natsorted
-from utils.layer_loader import load_image_and_skeleton
-#from processing.network_generator import get_network
-#from modifying_topology.add_tip import load_tip 
-#from modifying_topology.add_junction import load_junction
-from modifying_topology.edit_node import highlight
-from modifying_topology.add_edge import join
-from modifying_topology.remove_edge import remove
+from utils.adjacency_reader import adjacency_to_extracted
 from .update_display import update_image
 from .status import log
 from .browse import browse_folder
 from .process_image import process_clicked
 from .view_images import view_clicked
+from .visualize_graph import make_multigraph_image
+from .network_gen import network_click
+from .visualize_graph import load_graph_on_viewer
 
 class FileLoaderWidget(QWidget):
     """Widget for loading image files and setting processing options."""
@@ -40,19 +38,19 @@ class FileLoaderWidget(QWidget):
         self.setLayout(layout)
         
         # Title
-        title = QLabel("Nellie Network Analysis")
-        title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(title)
+        self.title_label = QLabel("Nellie Network Analysis")  # Store as class attribute
+        self.title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(self.title_label)
         
         # File selection section
-        file_group = QGroupBox("File Selection")
+        self.file_group = QGroupBox("File Selection")
         file_layout = QVBoxLayout()
-        file_group.setLayout(file_layout)
+        self.file_group.setLayout(file_layout)
         
         # File type selection
         type_layout = QHBoxLayout()
-        type_label = QLabel("File Type:")
-        type_layout.addWidget(type_label)
+        self.type_label = QLabel("File Type:")  # Store as class attribute
+        type_layout.addWidget(self.type_label)
         
         self.type_combo = QComboBox()
         self.type_combo.addItems(["Single TIFF", "Time Series"])
@@ -69,12 +67,12 @@ class FileLoaderWidget(QWidget):
         path_layout.addWidget(self.browse_btn)
         file_layout.addLayout(path_layout)
 
-        layout.addWidget(file_group)
+        layout.addWidget(self.file_group)
         
         # Processing options section
-        proc_group = QGroupBox("Processing Options")
+        self.proc_group = QGroupBox("Processing Options")
         proc_layout = QFormLayout()
-        proc_group.setLayout(proc_layout)
+        self.proc_group.setLayout(proc_layout)
         
         # Channel selection
         self.channel_spin = QSpinBox()
@@ -87,7 +85,7 @@ class FileLoaderWidget(QWidget):
         self.remove_edges_check.setChecked(False)
         proc_layout.addRow("Remove Edge Artifacts:", self.remove_edges_check)
         
-        layout.addWidget(proc_group)
+        layout.addWidget(self.proc_group)
         
         # Buttons section
         button_layout = QHBoxLayout()
@@ -104,11 +102,10 @@ class FileLoaderWidget(QWidget):
         
         layout.addLayout(button_layout)
         
-        
         # Image slider section
-        slider_group = QGroupBox("Image Navigation")
+        self.slider_group = QGroupBox("Image Navigation")
         slider_layout = QVBoxLayout()
-        slider_group.setLayout(slider_layout)
+        self.slider_group.setLayout(slider_layout)
         
         # Slider control
         slider_control_layout = QHBoxLayout()
@@ -129,7 +126,8 @@ class FileLoaderWidget(QWidget):
         
         # Slider widget
         slider_widget_layout = QHBoxLayout()
-        slider_widget_layout.addWidget(QLabel("Image:"))
+        self.slider_text_label = QLabel("Image:")  # Store as class attribute
+        slider_widget_layout.addWidget(self.slider_text_label)
         self.image_slider = QSpinBox()
         self.image_slider.setMinimum(1)
         self.image_slider.setMaximum(1)
@@ -138,20 +136,62 @@ class FileLoaderWidget(QWidget):
         slider_widget_layout.addWidget(self.image_slider)
         
         slider_layout.addLayout(slider_widget_layout)
-        layout.addWidget(slider_group)
-    
-        # Status section
-        self.status_text = QTextEdit()
-        self.status_text.setReadOnly(True)
-        self.status_text.setMaximumHeight(300)
-        layout.addWidget(QLabel("Status:"))
-        layout.addWidget(self.status_text)
+        layout.addWidget(self.slider_group)
         
-        # Network analysis button
+        # Network section - reorganized
+        self.network_group = QGroupBox("Network Analysis")
+        network_layout = QVBoxLayout()
+        self.network_group.setLayout(network_layout)
+        
+        # Network buttons
+        network_btn_layout = QHBoxLayout()
+        
         self.network_btn = QPushButton("Generate Network")
         self.network_btn.clicked.connect(self.on_network_clicked)
         self.network_btn.setEnabled(False)
-        layout.addWidget(self.network_btn)
+        network_btn_layout.addWidget(self.network_btn)
+        
+        self.graph_btn = QPushButton("Visualize Graph")
+        self.graph_btn.clicked.connect(self.on_graph_clicked)
+        self.graph_btn.setEnabled(False)
+        network_btn_layout.addWidget(self.graph_btn)
+        
+        self.open_graph_btn = QPushButton("Open Graph in New Window")
+        # Connect the signal when method is implemented
+        # self.open_graph_btn.clicked.connect(self.on_open_graph_window_clicked)
+        self.open_graph_btn.setEnabled(False)
+        network_btn_layout.addWidget(self.open_graph_btn)
+        
+        network_layout.addLayout(network_btn_layout)
+        
+        # Graph visualization section
+        self.graph_scroll = QScrollArea()
+        self.graph_scroll.setWidgetResizable(True)
+        self.graph_scroll.setMinimumHeight(150)  # Increased height for better visibility
+        
+        # Container widget for the graph image
+        self.graph_container = QWidget()
+        self.graph_container_layout = QVBoxLayout()
+        self.graph_container.setLayout(self.graph_container_layout)
+        
+        # Label to display the graph image
+        self.graph_image_label = QLabel("No graph generated yet")
+        self.graph_image_label.setAlignment(Qt.AlignCenter)
+        self.graph_container_layout.addWidget(self.graph_image_label)
+        
+        self.graph_scroll.setWidget(self.graph_container)
+        network_layout.addWidget(self.graph_scroll)
+        
+        layout.addWidget(self.network_group)
+        
+        # Status section
+        self.status_label = QLabel("Status:")  # Store as class attribute
+        layout.addWidget(self.status_label)
+        
+        self.status_text = QTextEdit()
+        self.status_text.setReadOnly(True)
+        self.status_text.setMaximumHeight(50)
+        layout.addWidget(self.status_text)
         
     def log_status(self, message):
         """Add a message to the status log."""
@@ -176,8 +216,9 @@ class FileLoaderWidget(QWidget):
         if not app_state.nellie_output_path:
             self.log_status("No data to analyze. Please run processing and view results first.")
             return
-            
-        
+        else:
+            network_click(self)   
+    
             
     def on_prev_clicked(self):
         """Handle previous button click to show previous image."""
@@ -210,3 +251,25 @@ class FileLoaderWidget(QWidget):
         current = self.image_slider.value()
         viewer = self.viewer
         update_image(self,viewer,current,index)
+
+    def on_graph_clicked(self):
+        """Handle graph button click to visualize the network graph."""
+        tif_files = os.listdir(app_state.nellie_output_path)
+        pixel_class_path = [f for f in tif_files if f.endswith('-ch0-im_pixel_class.ome.tif')][0]
+        base_name = os.path.basename(pixel_class_path).split(".")[0]
+
+        adjacency_path = [fls for fls in os.listdir(app_state.nellie_output_path) if fls.endswith('_adjacency_list.csv')][0]
+        adjacency_path = os.path.join(app_state.nellie_output_path, adjacency_path)
+
+        extracted_data_path = [fls for fls in os.listdir(app_state.nellie_output_path) if fls.endswith('_extracted.csv')][0]
+        extracted_data_path = os.path.join(app_state.nellie_output_path, extracted_data_path)
+        if not os.path.exists(extracted_data_path) and os.path.exists(adjacency_path):
+            adjacency_to_extracted(extracted_data_path,adjacency_path)
+            self.log_status("Error: Extracted data not found.")
+            return
+
+        success = make_multigraph_image(self,extracted_data_path,base_name)
+        if success:
+            load_graph_on_viewer(self)
+        else:
+            self.log_status("Error: Graph visualization failed.")
