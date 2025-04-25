@@ -23,7 +23,7 @@ class AppState:
         self.node_path = None
         self.node_dataframe = None
         self.slider_images = []
-        self.current_image_index = 0  # Current image index
+        self.current_image_index = 0  # Current image index; default is 0
         self.image_sets_keys = []
         self.image_sets = {}
         self.selected_node_position = []

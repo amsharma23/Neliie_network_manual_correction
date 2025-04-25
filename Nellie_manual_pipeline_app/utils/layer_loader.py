@@ -26,15 +26,15 @@ def load_image_and_skeleton(nellie_output_path):
     try:
         # Find relevant files in the output directory
         tif_files = os.listdir(nellie_output_path)
-        
         # Find raw image file (channel 0)
-        raw_files = [f for f in tif_files if f.endswith('-ch0-ome.ome.tif')]
+        raw_files = [f for f in tif_files if f.endswith('-ch0-ome.ome.tif') or ('raw.ome.tif' in f)]
+        
         if not raw_files:
             show_error("No raw image file found in the output directory")
             return None, None, [], [], []
             
         raw_file = raw_files[0]
-        basename = raw_file.split(".")[0]
+        # basename_raw = raw_file.split(".")[0]
         
         # Find skeleton image file
         skel_files = [f for f in tif_files if f.endswith('_pixel_class.ome.tif')]
@@ -43,21 +43,23 @@ def load_image_and_skeleton(nellie_output_path):
             return None, None, [], [], []
             
         skel_file = skel_files[0]
-              
+        basename_skel = skel_file.split(".")[0]
         # Get full paths
         raw_im_path = os.path.join(nellie_output_path, raw_file)
         skel_im_path = os.path.join(nellie_output_path, skel_file)
         
         # Check for node data file
-        node_path_extracted = os.path.join(nellie_output_path, f"{basename}_extracted.csv")
-        adjacency_path = os.path.join(nellie_output_path, f"{basename}_adjacency_list.csv")
+        node_path_extracted = os.path.join(nellie_output_path, f"{basename_skel}_extracted.csv")
+        adjacency_path = os.path.join(nellie_output_path, f"{basename_skel}_adjacency_list.csv")
         app_state.node_path = node_path_extracted
         print("Node path:", app_state.node_path)
         print("Adjacency path:", adjacency_path)
+
         # Load images
         raw_im = imread(raw_im_path)
         skel_im = imread(skel_im_path)
         skel_im = np.transpose(np.nonzero(skel_im))
+        
         # Default all points to red
         face_color_arr = ['red' for elm in range(len(skel_im))]
 
@@ -79,11 +81,12 @@ def load_image_and_skeleton(nellie_output_path):
             app_state.node_dataframe = node_df
             
             if not node_df.empty and not pd.isna(node_df.index.max()):
+
                 # Extract node positions and degrees
                 pos_extracted = node_df['Position(ZXY)'].values
-                
                 deg_extracted = node_df['Degree of Node'].values.astype(int)
                 positions = [get_float_pos_comma(el) for el in pos_extracted]
+
                 # Generate colors based on node degree
                 colors = []
                 for i, degree in enumerate(deg_extracted):
@@ -91,10 +94,12 @@ def load_image_and_skeleton(nellie_output_path):
                         colors.append('blue')  # Endpoint nodes
                     elif degree == 0:
                         colors.append('white')
+                    elif degree == 2:
+                        colors.append('magenta')
                     else:
                         colors.append('green')  # Junction nodes
                     
-                    # Map skeleton points to matching positions
+                # Map skeleton points to matching positions
                 
                 # Create a mapping of positions to colors
                 position_color_map = {}
@@ -105,16 +110,18 @@ def load_image_and_skeleton(nellie_output_path):
                 for i, point in enumerate(skel_im):
                     point_tuple = tuple(point)
                     if point_tuple in position_color_map:
-                        face_color_arr[i] = position_color_map[point_tuple]
-                        
+                        face_color_arr[i] = position_color_map[point_tuple]       
                 return raw_im, skel_im, face_color_arr, positions, colors
                 
             else:
+                
                 # Create empty dataframe if no data
                 app_state.node_dataframe = pd.DataFrame(columns=['Degree of Node', 'Position(ZXY)'])
                 app_state.node_dataframe.to_csv(node_path_extracted, index=False)
                 return raw_im, skel_im, face_color_arr, [], []
+        
         else:
+            
             # Create new node file if none exists
             app_state.node_dataframe = pd.DataFrame(columns=['Degree of Node', 'Position(ZXY)'])
             app_state.node_dataframe.to_csv(node_path_extracted, index=False)

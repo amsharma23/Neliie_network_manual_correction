@@ -81,7 +81,7 @@ def process_clicked(widget):
                     # Run Nellie processing with time point in the output name
                     im_info = run_nellie_processing(
                         im_path, 
-                        num_t=i,  # Pass time point index
+                        num_t=1,  # Pass time point index
                         remove_edges=widget.remove_edges_check.isChecked(),
                         ch=widget.channel_spin.value()
                     )

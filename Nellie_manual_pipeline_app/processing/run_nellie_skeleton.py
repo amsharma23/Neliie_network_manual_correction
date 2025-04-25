@@ -34,7 +34,6 @@ def run_nellie_processing(im_path, num_t=None, remove_edges=False, ch=0):
         return None
     
     try:
-        
         # Initialize ImInfo with the image
         im_info = ImInfo(im_path, ch=ch)
         
@@ -43,18 +42,22 @@ def run_nellie_processing(im_path, num_t=None, remove_edges=False, ch=0):
         #show_info(f"Dimension sizes set: {im_info.dim_sizes}")
         
         # Filtering step
-        preprocessing = Filter(im_info, num_t, remove_edges=remove_edges)
+        preprocessing = Filter(im_info, num_t=1, remove_edges=remove_edges)
         preprocessing.run()
         #show_info("Filtering complete")
         
-        # Segmentation step
-        segmenting = Label(im_info, num_t)
-        segmenting.run()
-        #show_info("Segmentation complete")
+        for i in range(2):
+            
+            # Segmentation step
+            segmenting = Label(im_info, num_t)
+            segmenting.run()
+            #show_info("Segmentation complete")
+            
+            # Network analysis
+            networking = Network(im_info, num_t)
+            networking.run()
+            
         
-        # Network analysis
-        networking = Network(im_info, num_t)
-        networking.run()
         show_info("Networking complete")
         
         return im_info

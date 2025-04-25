@@ -18,7 +18,6 @@ def update_image(widget,viewer,current,index):
 
         if current < widget.image_slider.maximum():
             widget.prev_btn.setEnabled(True)
-
             
         try:
             
@@ -42,7 +41,6 @@ def update_image(widget,viewer,current,index):
                 nellie_op_path = os.path.join(subdir_path , 'nellie_output')
                 app_state.nellie_output_path = nellie_op_path
             
-                        
                 if(check_nellie_path):
 
                     # Load images
@@ -91,6 +89,7 @@ def update_image(widget,viewer,current,index):
                             viewer.layers.remove('Connected Nodes')
                             app_state.editable_node_positions = []
                             app_state.selected_node_position = []
+                            
                         @viewer.bind_key('j')
                         def join_points(viewer):
                             if (len(list(viewer.layers[1].selected_data))!=2):
@@ -128,6 +127,7 @@ def update_image(widget,viewer,current,index):
                                     scale=[1.765, 1, 1],
                                     name='Extracted Nodes'
                                 )
+
                             widget.log_status("Joined Nodes sucessfully")                                
                             return
 
@@ -140,6 +140,7 @@ def update_image(widget,viewer,current,index):
                             elif flag:
                                 widget.log_status("Need to select exactly 2 nodes that are BOTH NOT RED to remove on the skeleton layer.")
                                 return
+                            
                             # Clear existing layers
                             widget.viewer.layers.clear()
             
@@ -179,6 +180,7 @@ def update_image(widget,viewer,current,index):
                         
                 
                 else:
+                   
                    tif_files = [f for f in os.listdir(subdir_path) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
                    for file in tif_files:                            
                        raw_im_path = (os.path.join(subdir_path, file))

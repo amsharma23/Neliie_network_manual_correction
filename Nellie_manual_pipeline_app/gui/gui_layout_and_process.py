@@ -11,7 +11,7 @@ QLabel, QPushButton, QSpinBox, QTextEdit,
 QVBoxLayout, QHBoxLayout, QWidget, QFileDialog)
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QLabel, QScrollArea
-
+from natsort import natsorted
 from app_state import app_state
 import os
 from utils.adjacency_reader import adjacency_to_extracted
@@ -152,7 +152,7 @@ class FileLoaderWidget(QWidget):
         network_btn_layout.addWidget(self.network_btn)
         
         self.graph_btn = QPushButton("Visualize Graph")
-        self.graph_btn.clicked.connect(self.on_graph_clicked)
+        self.graph_btn.clicked.connect(self.on_view_graph_clicked)
         self.graph_btn.setEnabled(False)
         network_btn_layout.addWidget(self.graph_btn)
         
@@ -190,7 +190,7 @@ class FileLoaderWidget(QWidget):
         
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
-        self.status_text.setMaximumHeight(50)
+        self.status_text.setMaximumHeight(100)
         layout.addWidget(self.status_text)
         
     def log_status(self, message):
@@ -200,7 +200,7 @@ class FileLoaderWidget(QWidget):
     def on_browse_clicked(self):
          """Handle browse button click to select input file or folder."""
          file_path = QFileDialog.getExistingDirectory(self, "Select Folder")
-         browse_folder(self, self.path_label, self.process_btn, self.view_btn, self.type_combo,file_path)
+         browse_folder(self, self.path_label, self.process_btn, self.view_btn, self.network_btn, self.graph_btn, self.type_combo,file_path)
     
     def on_process_clicked(self):
         """Handle process button click to run Nellie processing."""
@@ -219,15 +219,14 @@ class FileLoaderWidget(QWidget):
         else:
             network_click(self)   
     
-            
     def on_prev_clicked(self):
         """Handle previous button click to show previous image."""
         current = self.image_slider.value()
         if current > 1:
             self.next_btn.setEnabled(True)
-            self.image_slider.setValue(current - 1)
+            self.image_slider.setValue(current-1)
         elif (current) == 0:
-            self.prev_btn.setEnabled(False)            
+            self.prev_btn.setEnabled(False)        
             self.log_status('Reached End of Time Series')
 
     def on_next_clicked(self):
@@ -235,7 +234,7 @@ class FileLoaderWidget(QWidget):
         current = self.image_slider.value()
         if current < self.image_slider.maximum():
             self.prev_btn.setEnabled(True)
-            self.image_slider.setValue(current + 1)
+            self.image_slider.setValue(current+1)
         elif (current) == self.image_slider.maximum():
             self.next_btn.setEnabled(False)            
             self.log_status('Reached End of Time Series')
@@ -245,31 +244,93 @@ class FileLoaderWidget(QWidget):
         self.image_label.setText(f"Current Image: {value}/{self.image_slider.maximum()}")
         self.update_displayed_image(value - 1)  # Convert to 0-based index
         
-
     def update_displayed_image(self, index):
         """Update the displayed image based on slider index."""
         current = self.image_slider.value()
         viewer = self.viewer
         update_image(self,viewer,current,index)
 
-    def on_graph_clicked(self):
+    def on_view_graph_clicked(self):
+
         """Handle graph button click to visualize the network graph."""
-        tif_files = os.listdir(app_state.nellie_output_path)
-        pixel_class_path = [f for f in tif_files if f.endswith('-ch0-im_pixel_class.ome.tif')][0]
-        base_name = os.path.basename(pixel_class_path).split(".")[0]
+        if app_state.folder_type == 'Single TIFF':
+                
+            tif_files = os.listdir(app_state.nellie_output_path)
+            multigraph_im = [f for f in tif_files if (f.endswith('multigraph.png') or f.endswith('multigraph.pdf'))]
+            
+            if not multigraph_im:
+                pixel_class_path = [f for f in tif_files if (f.endswith('im_pixel_class.ome.tif') or f.endswith('im_pixel_class.ome.tiff'))][0]
+                pixel_base_name = os.path.basename(pixel_class_path).split(".")[0]
 
-        adjacency_path = [fls for fls in os.listdir(app_state.nellie_output_path) if fls.endswith('_adjacency_list.csv')][0]
-        adjacency_path = os.path.join(app_state.nellie_output_path, adjacency_path)
+                adjacency_path = [fls for fls in os.listdir(app_state.nellie_output_path) if fls.endswith('_adjacency_list.csv')][0]
+                adjacency_path = os.path.join(app_state.nellie_output_path, adjacency_path)
 
-        extracted_data_path = [fls for fls in os.listdir(app_state.nellie_output_path) if fls.endswith('_extracted.csv')][0]
-        extracted_data_path = os.path.join(app_state.nellie_output_path, extracted_data_path)
-        if not os.path.exists(extracted_data_path) and os.path.exists(adjacency_path):
-            adjacency_to_extracted(extracted_data_path,adjacency_path)
-            self.log_status("Error: Extracted data not found.")
-            return
+                extracted_data_path = [fls for fls in os.listdir(app_state.nellie_output_path) if fls.endswith('_extracted.csv')][0]
+                extracted_data_path = os.path.join(app_state.nellie_output_path, extracted_data_path)
+                
+                if not os.path.exists(extracted_data_path) and os.path.exists(adjacency_path):
+                    adjacency_to_extracted(extracted_data_path,adjacency_path)
+                    self.log_status("Error: Extracted data not found.")
+                    return
 
-        success = make_multigraph_image(self,extracted_data_path,base_name)
-        if success:
-            load_graph_on_viewer(self)
-        else:
-            self.log_status("Error: Graph visualization failed.")
+                success = make_multigraph_image(self,extracted_data_path,pixel_base_name)
+
+                if success:
+                    load_graph_on_viewer(self)
+                else:
+                    self.log_status(f"Error: Making Graph visual failed for {extracted_data_path}.")
+            
+            elif multigraph_im:
+                    app_state.graph_image_path = os.path.join(nellie_path, multigraph_im[0])
+                    self.log_status(f"Graph already generated for {current_subdir}.")
+                    load_graph_on_viewer(self)
+
+        elif app_state.folder_type == 'Time Series':
+
+            subdirs = [d for d in os.listdir(app_state.loaded_folder) 
+                      if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+            subdirs = natsorted(subdirs)
+
+            if subdirs:
+                
+                app_state.current_image_index = self.image_slider.value() - 1
+                current_subdir = subdirs[app_state.current_image_index]
+                print(f"Current subdir: {current_subdir}")
+
+                subdir_path = os.path.join(app_state.loaded_folder, current_subdir)
+                nellie_path = os.path.join(subdir_path,'nellie_output')
+                tif_files = os.listdir(nellie_path)
+                multigraph_im = [f for f in tif_files if (f.endswith('multigraph.png') or f.endswith('multigraph.pdf'))]
+                
+                if not multigraph_im:
+                    
+                    pixel_class_path = [f for f in tif_files if (f.endswith('im_pixel_class.ome.tif') or f.endswith('im_pixel_class.ome.tiff'))][0]
+                    pixel_base_name = os.path.basename(pixel_class_path).split(".")[0]
+
+                    adjacency_path = [fls for fls in os.listdir(nellie_path) if fls.endswith('_adjacency_list.csv')][0]
+                    adjacency_path = os.path.join(nellie_path, adjacency_path)
+
+                    extracted_data_path = [fls for fls in os.listdir(nellie_path) if (fls == pixel_base_name+'_extracted.csv')][0]
+                    extracted_data_path = os.path.join(nellie_path, extracted_data_path)
+                    
+                    if not os.path.exists(extracted_data_path) and os.path.exists(adjacency_path):
+                        adjacency_to_extracted(extracted_data_path,adjacency_path)
+                        self.log_status("Error: Extracted data not found.")
+                        return
+                    
+                    self.log_status(f"Skeleton base name: {pixel_base_name}")
+                    success = make_multigraph_image(self,extracted_data_path,pixel_base_name)
+                
+                    if success:
+                        load_graph_on_viewer(self)
+                    else:
+                        self.log_status(f"Error: Graph visualization failed for {current_subdir}.")
+                    
+                elif multigraph_im:
+                    app_state.graph_image_path = os.path.join(nellie_path, multigraph_im[0])
+                    self.log_status(f"Graph already generated for {current_subdir}.")
+                    load_graph_on_viewer(self)
+            
+            elif not subdirs:
+                self.log_status("No time series data found.")
+                return

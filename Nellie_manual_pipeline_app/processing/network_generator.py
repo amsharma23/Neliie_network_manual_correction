@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Mar 10 17:42:38 2025
-
 @author: Austin Lefebvre https://github.com/aelefebv
 """
+
 import os
 import numpy as np
 from tifffile import imread
 from napari.utils.notifications import show_info, show_warning, show_error
+from utils.adjacency_reader import adjacency_to_extracted
 from scipy.ndimage import label as labell
 import networkx as nx
 import csv
@@ -24,6 +25,7 @@ def get_network(pixel_class_path):
         tuple: (save_path, edge_path) - Paths to generated CSV and edge list files
     """
     try:
+        
         # Define output file paths
         base_name = os.path.basename(pixel_class_path).split(".")[0]
         save_name = f"{base_name}_adjacency_list.csv"
@@ -175,7 +177,10 @@ def get_network(pixel_class_path):
         # Write edge list
         nx.write_edgelist(G, edge_path)
         
-        show_info(f"Network analysis complete. Files saved to:\n- {save_path}\n- {edge_path}")
+        extr_path = os.path.join(os.path.dirname(pixel_class_path), f"{base_name}_extracted.csv")
+        adjacency_to_extracted(extr_path, save_path)
+
+        show_info(f"Network analysis complete. Files saved to:\n- {save_path}\n- {edge_path}\n - {extr_path}")
         return save_path, edge_path
         
     except Exception as e:

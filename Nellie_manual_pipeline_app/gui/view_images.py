@@ -2,8 +2,6 @@ from app_state import app_state
 from utils.layer_loader import load_image_and_skeleton
 import os
 from natsort import natsorted
-from napari.utils.notifications import show_error
-from tifffile import imread
 from modifying_topology.edit_node import highlight  
 from modifying_topology.add_edge import join
 from modifying_topology.remove_edge import remove
@@ -54,7 +52,10 @@ def view_clicked(widget,viewer,next_btn,prev_btn,image_slider,image_label,networ
                     
                     # Add extracted points if available
                     if positions and colors:
+
+                        network_btn.setEnabled(True)
                         widget.graph_btn.setEnabled(True)
+
                         app_state.points_layer = widget.viewer.add_points(
                             positions,
                             size=5,
@@ -163,7 +164,7 @@ def view_clicked(widget,viewer,next_btn,prev_btn,image_slider,image_label,networ
                             return
 
                     widget.log_status("Visualization loaded successfully")
-                    network_btn.setEnabled(True)
+                    
                 
             elif app_state.folder_type == 'Time Series':
                 
@@ -173,23 +174,25 @@ def view_clicked(widget,viewer,next_btn,prev_btn,image_slider,image_label,networ
                 # Check if we have subfolders for each time point
                 subdirs = [d for d in os.listdir(app_state.loaded_folder) 
                           if os.path.isdir(os.path.join(app_state.loaded_folder, d))]
+                
                 if subdirs:
                     
                     # Process each subfolder as a time point
-                    widget.log_status(f"Found {len(subdirs)} time point folders")
+                    widget.log_status(f"Found {len(subdirs)} time point folders in {app_state.loaded_folder} to view.")
                     subdirs = natsorted(subdirs)
                     for subdir in subdirs:
+                        
                         subdir_path = os.path.join(app_state.loaded_folder, subdir)
                         check_nellie_path = os.path.exists(os.path.join(subdir_path , 'nellie_output'))
-                        tif_files = [f for f in os.listdir(subdir_path) if (f.endswith('.ome.tif') or f.endswith('.ome.tiff'))]
+                        tif_files = [f for f in os.listdir(os.path.join(subdir_path,'nellie_output')) if (f.endswith('raw.ome.tif') or f.endswith('raw.ome.tiff'))]
                         
                         if not check_nellie_path :
                             widget.log_status(f"No results to view for {subdir_path} Please run processing first.")
                             continue
-                        
                         for file in tif_files:
-                            if file.endswith('.ome.tif'):
-                                
+
+                            if file.endswith('.ome.tif') or file.endswith('.ome.tiff'):
+                            
                                 # Extract base name (usually contains time point info)
                                 base_parts = file.split('.')
                                 if len(base_parts) > 1:
@@ -209,6 +212,7 @@ def view_clicked(widget,viewer,next_btn,prev_btn,image_slider,image_label,networ
                     image_slider.setMaximum(max(1, num_images))
                     image_slider.setValue(1)
                     image_label.setText(f"Current Image: 1/{max(1, num_images)}")
+                    print(f"Number of images: {num_images}")
                     
                     # Enable/disable navigation buttons
                     prev_btn.setEnabled(num_images > 1)
@@ -219,10 +223,11 @@ def view_clicked(widget,viewer,next_btn,prev_btn,image_slider,image_label,networ
                     
                     # Initialize with first image
                     if num_images > 0:
-                        widget.update_displayed_image(0)
+                        network_btn.setEnabled(True)
+                        widget.update_displayed_image(0)                        
                     
                     else:
-                        
+
                         # Fallback to original method if no image sets were found
                         raw_im, skel_im, face_colors, positions, colors = load_image_and_skeleton(app_state.nellie_output_path)
                         

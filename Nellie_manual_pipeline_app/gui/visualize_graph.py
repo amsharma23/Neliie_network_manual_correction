@@ -30,20 +30,21 @@ def make_multigraph_image(widget,extracted_data_path,base_name,scale_factor=1.0)
         True if visualization succeeded, False otherwise
     """
     try:
-        output_path = os.path.join(app_state.nellie_output_path, base_name+'_multigraph.png')
-        widget.log_status(f"Using scale factor: {scale_factor}")
         
+        output_path = os.path.join(app_state.nellie_output_path, base_name+'_multigraph.png')
         # Check if input file exists
         
         if not os.path.exists(extracted_data_path):
             widget.log_status(f"Error: Input file does not exist: {extracted_data_path}")
             return False
-        
+        else:
+            widget.log_status(f"Making Multigraph for: {extracted_data_path}")
+
         # Read the extracted list CSV data
         ext_data = pd.read_csv(extracted_data_path)
-         # Create a MultiGraph to properly track parallel edges
-        G = nx.MultiGraph()
         
+        # Create a MultiGraph to properly track parallel edges
+        G = nx.MultiGraph()
         
         # Add all nodes with their positions (helpful for layout)
         for _, row in ext_data.iterrows():
@@ -52,33 +53,37 @@ def make_multigraph_image(widget,extracted_data_path,base_name,scale_factor=1.0)
                     pos_y=get_float_pos_comma(row['Position(ZXY)'])[2], 
                     pos_z=get_float_pos_comma(row['Position(ZXY)'])[0],
             )
+        
         # Add edges and track multiplicity
         edge_count = {}  # This should be a dictionary, not an int
         for _, row in ext_data.iterrows():
             node_id = row['Node ID']
             adj_list = get_float_pos_comma(row['Neighbour ID'])
-            
+            edge_count_temp = {}
             for neighbor in adj_list:
-                # Add each instance of the edge to preserve parallel edges
-                G.add_edge(node_id, neighbor)
-                
                 # Also track for statistics
-                edge_key = tuple(sorted([node_id, neighbor]))
-                if edge_key in edge_count:
-                    edge_count[edge_key] += 1
-                else:
-                    edge_count[edge_key] = 1
-        
-        # Calculate node degrees (from the multigraph to count parallel edges)
+                if tuple(sorted([node_id, neighbor])) not in edge_count.keys():
+                    edge_key = tuple(sorted([node_id, neighbor]))
+                    if edge_key in edge_count_temp:
+                        edge_count_temp[edge_key] += 1
+                    else:
+                        edge_count_temp[edge_key] = 1
+
+            for edge_key in edge_count_temp.keys():
+                for i in range(edge_count_temp[edge_key]): G.add_edge(edge_key[0], edge_key[1])
+                edge_count[edge_key] = edge_count_temp[edge_key]
+
+       # Calculate node degrees (from the multigraph to count parallel edges)
         node_degrees = dict(G.degree())
         
         # Set up the plot with high resolution
-        plt.figure(figsize=(13.33, 10), dpi=300)
-        
+        fig = plt.figure(figsize=(13.33, 10), dpi=300)
+        ax = plt.gca()
         # Use a specialized layout algorithm for reducing edge crossings
         try:
             # First try kamada_kawai which often gives better layouts with fewer crossings
             layout = nx.kamada_kawai_layout(G, scale=scale_factor)
+        
         except:
             # Fall back to spring layout if kamada_kawai fails
             layout = nx.spring_layout(
@@ -112,19 +117,11 @@ def make_multigraph_image(widget,extracted_data_path,base_name,scale_factor=1.0)
         # Draw all edges with appropriate curves for parallel edges
         edge_width = max(0.5, 1.5/scale_factor)
         
-        # Group edges by endpoints to handle parallel edges
-        edge_groups = {}
-        for u, v, k in G.edges(keys=True):
-            edge_key = tuple(sorted([u, v]))
-            if edge_key not in edge_groups:
-                edge_groups[edge_key] = []
-            edge_groups[edge_key].append((u, v, k))
-        
         # Now draw each group of edges
-        for edge_key, edges in edge_groups.items():
+        for edge_key in edge_count.keys():
             u, v = edge_key
-            num_edges = len(edges)
-            
+            num_edges = edge_count[edge_key]
+
             if num_edges == 1:
                 # Single edge - draw straight
                 nx.draw_networkx_edges(
@@ -143,15 +140,16 @@ def make_multigraph_image(widget,extracted_data_path,base_name,scale_factor=1.0)
                 else:  # Odd number with one straight edge
                     curves = np.linspace(-max_curve, max_curve, num_edges)
                 
-                for i, (u, v, k) in enumerate(edges):
-                    nx.draw_networkx_edges(
-                        G,
-                        layout,
-                        edgelist=[(u, v)],
-                        width=edge_width,
-                        edge_color='gray',
-                        connectionstyle=f'arc3, rad={curves[i]}'
-                    )
+                for i in range(num_edges):
+                    ax.annotate("", 
+                                xy=layout[u], xycoords='data',
+                                xytext=layout[v], textcoords='data',
+                                arrowprops=dict(
+                                arrowstyle="-", 
+                                color='gray',  # You can replace with your color scheme
+                                connectionstyle=f"arc3,rad={curves[i]}",
+                                linewidth=edge_width  # Using the edge_width from your first snippet
+                            ))
         
         # Draw node labels (node numbers)
         # Adjust font size based on scale and number of nodes
@@ -225,11 +223,12 @@ def make_multigraph_image(widget,extracted_data_path,base_name,scale_factor=1.0)
         return False
 
 def load_graph_on_viewer(widget):
+    
     # Load the image and convert to QPixmap for display
     graph_image = QImage(app_state.graph_image_path)
     pixmap = QPixmap.fromImage(graph_image)
     
- # Calculate available width from the scroll area
+    # Calculate available width from the scroll area
     available_width = widget.graph_scroll.width() - 20  # Subtract some padding
     
     # Scale the image to fit while maintaining aspect ratio
